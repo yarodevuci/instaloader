@@ -74,11 +74,13 @@ def format_string_contains_key(format_string: str, key: str) -> bool:
 
 def _requires_login(func: Callable) -> Callable:
     """Decorator to raise an exception if herewith-decorated function is called without being logged in"""
+
     @wraps(func)
     def call(instaloader, *args, **kwargs):
         if not instaloader.context.is_logged_in:
             raise LoginRequiredException("Login required.")
         return func(instaloader, *args, **kwargs)
+
     return call
 
 
@@ -91,6 +93,7 @@ def _retry_on_connection_error(func: Callable) -> Callable:
     :meth:`.get_json`, :meth:`.get_iphone_json`, :meth:`.graphql_query` and :meth:`.graphql_node_list` already have
     their own logic for retrying, hence functions that only use these for network access must not be decorated with this
     decorator."""
+
     @wraps(func)
     def call(instaloader, *args, **kwargs):
         try:
@@ -110,6 +113,7 @@ def _retry_on_connection_error(func: Callable) -> Callable:
             except KeyboardInterrupt:
                 instaloader.context.error("[skipped by user]", repeat_at_end=False)
                 raise ConnectionException(error_string) from None
+
     return call
 
 
@@ -245,7 +249,7 @@ class Instaloader:
             self.title_pattern = title_pattern
         else:
             if (format_string_contains_key(self.dirname_pattern, 'profile') or
-                format_string_contains_key(self.dirname_pattern, 'target')):
+                    format_string_contains_key(self.dirname_pattern, 'target')):
                 self.title_pattern = '{date_utc}_UTC_{typename}'
             else:
                 self.title_pattern = '{target}_{date_utc}_UTC_{typename}'
@@ -275,15 +279,15 @@ class Instaloader:
                     self.slide_start = -1
                 else:
                     if int(splitted[0]) > 0:
-                        self.slide_start = self.slide_end = int(splitted[0])-1
+                        self.slide_start = self.slide_end = int(splitted[0]) - 1
                     else:
                         raise InvalidArgumentException("--slide parameter must be greater than 0.")
             elif len(splitted) == 2:
                 if splitted[1] == 'last':
-                    self.slide_start = int(splitted[0])-1
+                    self.slide_start = int(splitted[0]) - 1
                 elif 0 < int(splitted[0]) < int(splitted[1]):
-                    self.slide_start = int(splitted[0])-1
-                    self.slide_end = int(splitted[1])-1
+                    self.slide_start = int(splitted[0]) - 1
+                    self.slide_end = int(splitted[1]) - 1
                 else:
                     raise InvalidArgumentException("Invalid data for --slide parameter.")
             else:
@@ -402,7 +406,7 @@ class Instaloader:
             return unique_comments_list
 
         def get_new_comments(new_comments, start):
-            for idx, comment in enumerate(new_comments, start=start+1):
+            for idx, comment in enumerate(new_comments, start=start + 1):
                 if idx % 250 == 0:
                     self.context.log('{}'.format(idx), end='…', flush=True)
                 yield comment
@@ -445,9 +449,11 @@ class Instaloader:
 
     def save_caption(self, filename: str, mtime: datetime, caption: str) -> None:
         """Updates picture caption / Post metadata info"""
+
         def _elliptify(caption):
             pcaption = caption.replace('\n', ' ').strip()
             return '[' + ((pcaption[:29] + "\u2026") if len(pcaption) > 31 else pcaption) + ']'
+
         filename += '.txt'
         caption += '\n'
         pcaption = _elliptify(caption)
@@ -535,8 +541,8 @@ class Instaloader:
         pic_data = TitlePic(owner_profile, target, name_suffix, ig_filename, date_object)
         dirname = _PostPathFormatter(pic_data, self.sanitize_paths).format(self.dirname_pattern, target=target)
         filename_template = os.path.join(
-                dirname,
-                _PostPathFormatter(pic_data, self.sanitize_paths).format(self.title_pattern, target=target))
+            dirname,
+            _PostPathFormatter(pic_data, self.sanitize_paths).format(self.title_pattern, target=target))
         filename = self.__prepare_filename(filename_template, lambda: url) + ".jpg"
         content_length = http_response.headers.get('Content-Length', None)
         if os.path.isfile(filename) and (not self.context.is_logged_in or
@@ -880,7 +886,7 @@ class Instaloader:
             if latest_stamps is not None:
                 latest_stamps.set_last_story_timestamp(name, scraped_timestamp)
 
-    def download_storyitem(self, item: StoryItem, target: Union[str, Path]) -> bool:
+    def download_storyitem(self, item: StoryItem, file_name: str) -> bool:
         """Download one user story.
 
         :param item: Story item, as in story['items'] for story in :meth:`get_stories`
@@ -888,38 +894,25 @@ class Instaloader:
         :return: True if something was downloaded, False otherwise, i.e. file was already there
         """
 
-        def _already_downloaded(path: str) -> bool:
-            if not os.path.isfile(path):
-                return False
-            else:
-                self.context.log(path + ' exists', end=' ', flush=True)
-                return True
-
         date_local = item.date_local
-        dirname = _PostPathFormatter(item, self.sanitize_paths).format(self.dirname_pattern, target=target)
-        filename_template = os.path.join(dirname, self.format_filename(item, target=target))
-        filename = self.__prepare_filename(filename_template, lambda: item.url)
         downloaded = False
         video_url_fetch_failed = False
         if item.is_video and self.download_videos is True:
             video_url = item.video_url
             if video_url:
-                filename = self.__prepare_filename(filename_template, lambda: str(video_url))
-                downloaded |= (not _already_downloaded(filename + ".mp4") and
-                               self.download_pic(filename=filename, url=video_url, mtime=date_local))
+                downloaded |= (self.download_pic(filename=file_name, url=video_url, mtime=date_local))
             else:
                 video_url_fetch_failed = True
         if video_url_fetch_failed or not item.is_video or self.download_video_thumbnails is True:
-            downloaded = (not _already_downloaded(filename + ".jpg") and
-                          self.download_pic(filename=filename, url=item.url, mtime=date_local))
+            downloaded = (self.download_pic(filename=file_name, url=item.url, mtime=date_local))
         # Save caption if desired
-        metadata_string = _ArbitraryItemFormatter(item).format(self.storyitem_metadata_txt_pattern).strip()
-        if metadata_string:
-            self.save_caption(filename=filename, mtime=item.date_local, caption=metadata_string)
+        # metadata_string = _ArbitraryItemFormatter(item).format(self.storyitem_metadata_txt_pattern).strip()
+        # if metadata_string:
+        #     self.save_caption(filename=filename, mtime=item.date_local, caption=metadata_string)
         # Save metadata as JSON if desired.
         if self.save_metadata is not False:
-            self.save_metadata_json(filename, item)
-        self.context.log()
+            self.save_metadata_json(file_name, item)
+        # self.context.log()
         return downloaded
 
     @_requires_login
@@ -968,10 +961,10 @@ class Instaloader:
         for user_highlight in self.get_highlights(user):
             name = user_highlight.owner_username
             highlight_target: Union[str, Path] = (filename_target
-                                if filename_target
-                                else (Path(_PostPathFormatter.sanitize_path(name, self.sanitize_paths)) /
-                                      _PostPathFormatter.sanitize_path(user_highlight.title,
-                                                                       self.sanitize_paths)))
+                                                  if filename_target
+                                                  else (Path(_PostPathFormatter.sanitize_path(name, self.sanitize_paths)) /
+                                                        _PostPathFormatter.sanitize_path(user_highlight.title,
+                                                                                         self.sanitize_paths)))
             self.context.log("Retrieving highlights \"{}\" from profile {}".format(user_highlight.title, name))
             self.download_highlight_cover(user_highlight, highlight_target)
             totalcount = user_highlight.itemcount
